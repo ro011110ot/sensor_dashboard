@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climate Control Center - Dark Edition</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f111a;
+            --card-bg: #1a1d2b;
+            --border-color: #2d324a;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-red: #ef4444;
+            --accent-cyan: #0dcaf0;
+            --time-color: #cbd5e1; /* Helles Silber-Grau für die Uhrzeit */
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+
+        .chart-container { position: relative; height: 45vh; width: 100%; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-color); }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+
+        /* Table Styling */
+        .table-dark { background-color: var(--card-bg); }
+        .table-hover tbody tr:hover {
+            background-color: rgba(255, 255, 255, 0.05) !important;
+        }
+
+        .table thead th {
+            background-color: rgba(0, 0, 0, 0.2);
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.08em;
+            border-bottom: 2px solid var(--border-color);
+            padding: 15px;
+        }
+
+        .td-time {
+            color: var(--time-color);
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-weight: 500;
+        }
+
+        .border-secondary { border-color: var(--border-color) !important; }
+
+        .status-dot {
+            height: 10px; width: 10px; border-radius: 50%; display: inline-block;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; }
+        }
+
+        .badge-hum {
+            background-color: rgba(13, 202, 240, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(13, 202, 240, 0.3);
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container py-4">
+    <header class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="h4 mb-0 text-white">🏠 Smart Home Monitor</h2>
+        <span class="badge bg-success d-flex align-items-center px-3 py-2">
+            <span class="status-dot bg-white me-2"></span> Live
+        </span>
+    </header>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card p-3 shadow">
+                <h5 class="card-title text-muted mb-4 h6">TEMPERATURE & HUMIDITY HISTORY</h5>
+                <div class="chart-container">
+                    <canvas id="climateChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card overflow-hidden shadow">
+                <div class="card-header border-secondary py-3" style="background-color: rgba(0,0,0,0.1);">
+                    <h5 class="mb-0 h6 text-white">Detailed Measurements</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4">Date / Time</th>
+                                    <th>Outdoor (°C)</th>
+                                    <th>Indoor (°C)</th>
+                                    <th>Humidity (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in rows %}
+                                <tr>
+                                    <td class="ps-4 time-cell">{{ row.timestamp.strftime('%d.%m. %H:%M') }}</td>
+                                    <td>
+                                        {% if row.outdoor_temp is not none %}
+                                            <span class="text-danger">{{ "%.1f"|format(row.outdoor_temp) }}°C</span>
+                                        {% else %}
+                                            <span class="text-muted">--</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if row.indoor_temp is not none %}
+                                            <span class="text-info">{{ "%.1f"|format(row.indoor_temp) }}°C</span>
+                                        {% else %}
+                                            <span class="text-muted">--</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if row.indoor_hum is not none %}
+                                            <span class="text-cyan">{{ "%.1f"|format(row.indoor_hum) }}%</span>
+                                        {% else %}
+                                            <span class="text-muted">--</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const labels = [{% for row in sensor_data|reverse %}"{{ row.timestamp.strftime('%H:%M') }}",{% endfor %}];
+    const ctx = document.getElementById('climateChart').getContext('2d');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Indoor Temp',
+                    data: [{% for row in sensor_data|reverse %}{{ row.indoor_temp or 'null' }},{% endfor %}],
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Outdoor Temp',
+                    data: [{% for row in sensor_data|reverse %}{{ row.outdoor_temp or 'null' }},{% endfor %}],
+                    borderColor: '#3b82f6',
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    tension: 0.4
+                },
+                {
+                    label: 'Humidity',
+                    data: [{% for row in sensor_data|reverse %}{{ row.indoor_hum or 'null' }},{% endfor %}],
+                    borderColor: '#0dcaf0',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0.4,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: {
+                    type: 'linear', position: 'left',
+                    grid: { color: '#2d324a' },
+                    ticks: { color: '#94a3b8' },
+                    title: { display: true, text: 'Temperature (°C)', color: '#94a3b8' }
+                },
+                y1: {
+                    type: 'linear', position: 'right',
+                    min: 0, max: 100,
+                    grid: { drawOnChartArea: false },
+                    ticks: { color: '#94a3b8' },
+                    title: { display: true, text: 'Humidity (%)', color: '#94a3b8' }
+                },
+                x: {
+                    grid: { color: '#2d324a' },
+                    ticks: { color: '#94a3b8' }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: '#e2e8f0', padding: 20, usePointStyle: true }
+                },
+                tooltip: {
+                    backgroundColor: '#1a1d2b',
+                    borderColor: '#2d324a',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: true
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>
