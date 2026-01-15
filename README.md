@@ -20,26 +20,28 @@ Since this project uses `uv` for extremely fast and reliable Python package mana
    cd sensor_dashboard
 Create a virtual environment:
 
-Bash
 
+ ```bash
 uv venv
+ ```
 Activate the environment:
 
-Bash
 
+ ```bash
 source .venv/bin/activate
 Install dependencies from requirements.txt:
+ ```
 
-Bash
-
+ ```bash
 uv pip install -r requirements.txt
 Configuration: Ensure your .config file is present in the root directory with the following keys: DB_HOST, DB_USER, DB_PASSWORD, DB_NAME.
-
+ ```
 Run the Dashboard:
 
 Bash
-
+ ```bash
 ./start_dash.sh
+ ```
 Database Synchronization
 Measurements are synchronized to 15-minute intervals (:00, :15, :30, :45). The backend performs a fuzzy join across multiple tables to align indoor and outdoor data points even if timestamps vary by a few seconds.
 
