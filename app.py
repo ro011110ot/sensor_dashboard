@@ -7,45 +7,83 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Configuration setup
 script_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(script_dir, ".config")
 CONFIG = dotenv_values(config_path)
+
 
 def get_db_connection():
     return mysql.connector.connect(
         host=CONFIG.get("DB_HOST", "localhost"),
         user=CONFIG["DB_USER"],
         password=CONFIG["DB_PASSWORD"],
-        database=CONFIG["DB_NAME"]
+        database=CONFIG["DB_NAME"],
     )
 
-@app.route('/')
+
+@app.route("/")
 def index():
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
 
-    # Diese Query gruppiert die Daten in 15-Minuten-Schritte
-    # Die Formel FLOOR(MINUTE(timestamp)/15)*15 rundet die Minuten ab
+    # ... (Query bleibt gleich wie zuletzt besprochen) ...
+
+    rows = []
+    chart_data = []  # Zusätzliche Liste für JS
+    try:
+        cursor.execute(query)
+        result = cursor.fetchall()
+
+        # Wir drehen das Ergebnis für den Graphen um (älteste zuerst)
+        for row in reversed(result):
+            # String für JavaScript Graph (ISO Format)
+            chart_row = row.copy()
+            chart_row["time_label"] = row["time_slot"]
+            chart_data.append(chart_row)
+
+        # Liste für die Tabelle (neueste zuerst)
+        for row in result:
+            row["timestamp"] = datetime.strptime(row["time_slot"], "%Y-%m-%d %H:%M:%S")
+            rows.append(row)
+
+    except Exception as e:
+        print(f"DATABASE ERROR: {e}")
+    finally:
+        cursor.close()
+        db.close()
+
+    return render_template("index.html", rows=rows, chart_data=chart_data)
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+
+    # Robust query: Rounds every timestamp to the nearest 15min slot BEFORE grouping
     query = """
-   SELECT
-        CONCAT(DATE_FORMAT(timestamp, '%Y-%m-%d %H:'),
-               LPAD(FLOOR(MINUTE(timestamp)/15)*15, 2, '0')) AS time_group,
+    SELECT
+        time_slot,
         MAX(IF(sensor='i_temp', value, NULL)) AS indoor_temp,
         MAX(IF(sensor='i_hum', value, NULL)) AS indoor_hum,
         MAX(IF(sensor='o_temp', value, NULL)) AS outdoor_temp
     FROM (
-        SELECT timestamp, 'i_temp' as sensor, Temp as value
+        SELECT
+            DATE_FORMAT(timestamp - INTERVAL MINUTE(timestamp)%15 MINUTE,
+                        '%Y-%m-%d %H:%i:00') as time_slot,
+            'i_temp' as sensor, Temp as value
         FROM Sensors_Indoor_Temp
         UNION ALL
-        SELECT timestamp, 'i_hum' as sensor, Humidity as value
+        SELECT
+            DATE_FORMAT(timestamp - INTERVAL MINUTE(timestamp)%15 MINUTE,
+                        '%Y-%m-%d %H:%i:00') as time_slot,
+            'i_hum' as sensor, Humidity as value
         FROM Sensors_Indoor_Humidity
         UNION ALL
-        SELECT timestamp, 'o_temp' as sensor, Temp as value
+        SELECT
+            DATE_FORMAT(timestamp - INTERVAL MINUTE(timestamp)%15 MINUTE,
+                        '%Y-%m-%d %H:%i:00') as time_slot,
+            'o_temp' as sensor, Temp as value
         FROM Sensors_Outdoor_DS18B20
     ) AS sub
-    GROUP BY time_group
-    ORDER BY time_group DESC
+    GROUP BY time_slot
+    ORDER BY time_slot DESC
     LIMIT 40
     """
 
@@ -53,18 +91,20 @@ def index():
     try:
         cursor.execute(query)
         result = cursor.fetchall()
+        print(f"DEBUG: Found {len(result)} rows in database.")  # Check your console!
+
         for row in result:
-            # Wir wandeln den 'time_group' String in ein echtes datetime-Objekt um
-            # Damit kann Jinja2 in der index.html .strftime() benutzen
-            row['timestamp'] = datetime.strptime(row['time_group'], '%Y-%m-%d %H:%M')
+            # Convert string back to datetime for Jinja2 formatting
+            row["timestamp"] = datetime.strptime(row["time_slot"], "%Y-%m-%d %H:%M:%S")
             rows.append(row)
     except Exception as e:
-        print(f"Error fetching data: {e}")
+        print(f"DATABASE ERROR: {e}")
     finally:
+        cursor.close()
         db.close()
 
-    return render_template('index.html', sensor_data=rows)
+    return render_template("index.html", rows=rows)
 
-if __name__ == '__main__':
-    # Flask app is accessible on the network
-    app.run(host='0.0.0.0', port=5000)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
